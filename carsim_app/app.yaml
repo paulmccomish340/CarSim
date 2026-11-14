@@ -1,0 +1,32 @@
+command:
+  - uvicorn
+  - app:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8000"
+
+env:
+  - name: SIM_TICK_HZ
+    value: "60"
+  - name: DRIVE_SIDE
+    value: "left"
+  - name: TELEMETRY_HZ
+    value: "10"  # telemetry only; the on-screen animation is not tied to this
+  - name: NUM_AMBIENT_CARS
+    value: "6"
+  - name: NUM_PEDESTRIANS
+    value: "28"
+  # Zerobus settings are supplied by the Databricks configuration.
+  # Leave these blank here and set them in the app config. Put the client
+  # secret in a Databricks secret resource, never as a literal value.
+  - name: ZEROBUS_WORKSPACE_URL
+    value: ""
+  - name: ZEROBUS_INGEST_URL
+    value: ""
+  - name: ZEROBUS_TABLE
+    value: ""
+  - name: ZEROBUS_CLIENT_ID
+    value: ""
+  - name: ZEROBUS_CLIENT_SECRET
+    value: ""

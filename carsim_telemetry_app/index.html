@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Car Telemetry Live</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#EBEBEB; --card:#FCFCFD; --text:#08141A; --muted:#5a6670; --track:#E3E3E3;
+          --blue:#2375A8; --red:#D64545; --amber:#F0A830; --green:#52A870; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Arial, Helvetica, sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; flex-wrap:wrap; gap:6px 16px; justify-content:space-between; align-items:center; padding:14px clamp(10px, 2vw, 20px); }
+  header h1 { font-size:20px; margin:0; }
+  #status { font-size:13px; color:var(--muted); }
+  #status.err { color:var(--red); }
+  /* Responsive layout: columns are added or removed as the window width changes. */
+  .grid { display:grid; gap:12px; padding:0 clamp(10px, 2vw, 20px) 12px; }
+  .g2 { grid-template-columns:repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+  .g4 { grid-template-columns:repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+  .card { background:var(--card); border-radius:8px; padding:12px 14px; min-width:0; }
+  .card h2 { font-size:14px; margin:0 0 6px; }
+  .chart { position:relative; height:clamp(170px, 26vh, 340px); }
+  .top { display:grid; gap:12px; padding:0 clamp(10px, 2vw, 20px) 12px;
+         grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+  .guidance-card { display:flex; flex-direction:column; gap:8px; }
+  #guidance_text { font-size:clamp(14px, 1.1vw, 16px); line-height:1.55; }
+  #guidance_text.muted { color:var(--muted); font-style:italic; }
+  #guidance_text.err { color:var(--red); }
+  .guidance-meta { font-size:12px; color:var(--muted); margin-top:auto; }
+  .guidance-meta button { font-size:12px; margin-left:8px; cursor:pointer; }
+  .score-card { display:flex; flex-direction:column; gap:10px; }
+  .score-card label { font-size:13px; color:var(--muted); }
+  .score-card select { font-size:15px; padding:6px 8px; border-radius:6px; border:1px solid #ccc; background:#fff; width:100%; max-width:320px; }
+  .score-row { display:flex; flex-wrap:wrap; align-items:center; gap:16px; }
+  .score-badge { width:clamp(100px, 10vw, 140px); height:clamp(100px, 10vw, 140px); border-radius:50%; display:flex; flex-direction:column;
+                 align-items:center; justify-content:center; color:#fff; background:var(--muted); flex:none; }
+  .score-badge .val { font-size:clamp(36px, 3.6vw, 52px); font-weight:bold; line-height:1; }
+  .score-badge .max { font-size:13px; opacity:.9; }
+  .score-badge.red { background:var(--red); } .score-badge.amber { background:var(--amber); } .score-badge.green { background:var(--green); }
+  .score-meta { font-size:13px; line-height:1.6; }
+  .score-meta .who { font-size:16px; font-weight:bold; }
+  .crash { color:var(--red); font-weight:bold; }
+  .pen { width:100%; border-collapse:collapse; font-size:12px; }
+  .pen td { padding:2px 4px; } .pen td:last-child { text-align:right; color:var(--red); }
+  table.lb { width:100%; border-collapse:collapse; font-size:13px; }
+  table.lb th, table.lb td { padding:6px 8px; text-align:left; border-bottom:1px solid var(--track); }
+  table.lb th { color:var(--muted); font-weight:normal; }
+  table.lb tr.sel { background:#EAF2F8; }
+  table.lb tr { cursor:pointer; }
+  .pill { display:inline-block; min-width:48px; text-align:center; padding:2px 8px; border-radius:10px; color:#fff; font-weight:bold; }
+  .pill.red { background:var(--red); } .pill.amber { background:var(--amber); } .pill.green { background:var(--green); }
+  .lb-wrap { max-height:clamp(200px, 32vh, 360px); overflow:auto; }
+  table.lb td, table.lb th { white-space:nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Car Telemetry Live</h1>
+  <div id="status">Loading...</div>
+</header>
+
+<div class="top">
+  <div class="card score-card">
+    <h2>Safe Driver Score</h2>
+    <div>
+      <label for="reg">Vehicle registration</label><br />
+      <select id="reg"><option value="__AUTONOMOUS__">Autonomous</option></select>
+    </div>
+    <div class="score-row">
+      <div id="score_badge" class="score-badge"><div class="val" id="score_val">--</div><div class="max">/ 100</div></div>
+      <div class="score-meta">
+        <div class="who" id="score_who">-</div>
+        <div id="score_driver"></div>
+        <div id="score_records"></div>
+        <div id="score_crash"></div>
+      </div>
+    </div>
+    <table class="pen" id="score_pen"></table>
+  </div>
+  <div class="card guidance-card">
+    <h2>Driving guidance: latest session</h2>
+    <div id="guidance_text" class="muted">Loading...</div>
+    <div class="guidance-meta" id="guidance_meta">From the Autonomous Driving Agent</div>
+  </div>
+  <div class="card">
+    <h2>Leaderboard: safe driving score, all drivers</h2>
+    <div class="lb-wrap">
+      <table class="lb">
+        <thead><tr><th>#</th><th>Registration</th><th>Driver</th><th>Score</th><th>Crash</th><th>Records</th><th>Last seen</th></tr></thead>
+        <tbody id="lb_body"><tr><td colspan="7">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="grid g2">
+  <div class="card"><h2>Battery SoC (%)</h2><div class="chart"><canvas id="c_battery"></canvas></div></div>
+  <div class="card"><h2>Range (km)</h2><div class="chart"><canvas id="c_range"></canvas></div></div>
+</div>
+<div class="grid g4">
+  <div class="card"><h2>Tyre Pressure FL (bar)</h2><div class="chart"><canvas id="c_fl"></canvas></div></div>
+  <div class="card"><h2>Tyre Pressure FR (bar)</h2><div class="chart"><canvas id="c_fr"></canvas></div></div>
+  <div class="card"><h2>Tyre Pressure RL (bar)</h2><div class="chart"><canvas id="c_rl"></canvas></div></div>
+  <div class="card"><h2>Tyre Pressure RR (bar)</h2><div class="chart"><canvas id="c_rr"></canvas></div></div>
+</div>
+<div class="grid g2">
+  <div class="card"><h2>Speed (mph)</h2><div class="chart"><canvas id="c_speed"></canvas></div></div>
+  <div class="card"><h2>Distance to Vehicle Ahead (m)</h2><div class="chart"><canvas id="c_gap"></canvas></div></div>
+  <div class="card"><h2>Braking Force (kN)</h2><div class="chart"><canvas id="c_brake"></canvas></div></div>
+  <div class="card"><h2>Acceleration Force (kN)</h2><div class="chart"><canvas id="c_accel"></canvas></div></div>
+</div>
+
+<script>
+const REFRESH_MS = 10000;
+const C = { blue:'#2375A8' };
+
+function makeChart(id, label) {
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels: [], datasets: [{ label, data: [], borderColor: C.blue, backgroundColor: C.blue,
+             borderWidth: 1.5, pointRadius: 0, tension: 0.2 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { maxTicksLimit: 8, autoSkip: true } }, y: { beginAtZero: false } } }
+  });
+}
+const charts = {
+  speed_mph: makeChart('c_speed', 'Speed (mph)'),
+  distance_to_vehicle_ahead_m: makeChart('c_gap', 'Distance (m)'),
+  braking_force_kn: makeChart('c_brake', 'Braking (kN)'),
+  acceleration_force_kn: makeChart('c_accel', 'Acceleration (kN)'),
+  battery_soc_pct: makeChart('c_battery', 'Battery SoC (%)'),
+  range_km: makeChart('c_range', 'Range (km)'),
+  tyre_pressure_fl_bar: makeChart('c_fl', 'FL (bar)'),
+  tyre_pressure_fr_bar: makeChart('c_fr', 'FR (bar)'),
+  tyre_pressure_rl_bar: makeChart('c_rl', 'RL (bar)'),
+  tyre_pressure_rr_bar: makeChart('c_rr', 'RR (bar)'),
+};
+
+function fmtTime(iso) {
+  const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+const AUTONOMOUS = '__AUTONOMOUS__';
+const regSelect = document.getElementById('reg');
+let selectedReg = null;   // null until the user picks one; defaults to the most recently active
+let lastOptionsHtml = '';
+
+// Below 50 red, 50 to 85 amber, above 85 green.
+function scoreClass(s) {
+  if (s === null || s === undefined) return '';
+  s = Math.round(s);   // colour matches the whole number shown
+  if (s < 50) return 'red';
+  if (s <= 85) return 'amber';
+  return 'green';
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+async function getJson(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).detail || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+function currentReg() { return selectedReg ?? regSelect.value ?? AUTONOMOUS; }
+
+async function loadRegistrations() {
+  const data = await getJson('api/registrations');
+  const html = data.registrations.map(r =>
+    `<option value="${esc(r.value)}">${esc(r.label)}${r.driver_name ? ' - ' + esc(r.driver_name) : ''}</option>`).join('');
+  // Only rebuild when the list changes, so an open dropdown is not closed by the refresh.
+  if (html !== lastOptionsHtml) { regSelect.innerHTML = html; lastOptionsHtml = html; }
+  const values = data.registrations.map(r => r.value);
+  // Until the user picks one, follow the most recently active registration.
+  regSelect.value = selectedReg && values.includes(selectedReg) ? selectedReg : (values[0] || AUTONOMOUS);
+}
+
+const PENALTIES = [
+  ['p_brake', 'Harsh braking', 'harsh_brake_rate'],
+  ['p_accel', 'Fast acceleration', 'harsh_accel_rate'],
+  ['p_speed', 'Speeding', 'speeding_rate'],
+  ['p_gap', 'Following too closely', 'tailgating_rate'],
+  ['p_tyre', 'Tyre pressure', null],
+  ['p_battery', 'Low battery / range', 'low_battery_rate'],
+];
+
+function renderScore(s) {
+  const badge = document.getElementById('score_badge');
+  badge.className = 'score-badge ' + scoreClass(s.score);
+  document.getElementById('score_val').textContent = s.score === null || s.score === undefined ? '--' : Math.round(s.score);
+  document.getElementById('score_who').textContent = s.label || '-';
+  document.getElementById('score_driver').textContent = s.driver_name ? 'Driver: ' + s.driver_name : '';
+  document.getElementById('score_records').textContent = s.records ? `${s.records.toLocaleString()} records` : 'No data yet';
+  document.getElementById('score_crash').innerHTML = s.crashed
+    ? `<span class="crash">Crash detected - score capped at ${s.crash_max_score}</span>` : '';
+  document.getElementById('score_pen').innerHTML = s.score === null || s.score === undefined ? '' :
+    PENALTIES.map(([k, label, rate]) => {
+      const pct = rate && s[rate] !== null ? ` (${(s[rate] * 100).toFixed(1)}% of records)` : '';
+      return `<tr><td>${label}${pct}</td><td>-${(s[k] || 0).toFixed(1)}</td></tr>`;
+    }).join('');
+}
+
+function renderLeaderboard(rows) {
+  const reg = currentReg();
+  document.getElementById('lb_body').innerHTML = rows.length ? rows.map(r => `
+    <tr class="${r.reg_key === reg ? 'sel' : ''}" data-reg="${esc(r.reg_key)}">
+      <td>${r.rank}</td><td>${esc(r.label)}</td><td>${esc(r.driver_name || '-')}</td>
+      <td><span class="pill ${scoreClass(r.score)}">${r.score === null ? '--' : Math.round(r.score)}</span></td>
+      <td>${r.crashed ? '<span class="crash">Yes</span>' : 'No'}</td>
+      <td>${r.records.toLocaleString()}</td>
+      <td>${r.last_seen ? fmtTime(r.last_seen) : '-'}</td>
+    </tr>`).join('') : '<tr><td colspan="7">No drivers yet</td></tr>';
+}
+
+document.getElementById('lb_body').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-reg]');
+  if (!tr) return;
+  selectedReg = tr.dataset.reg;
+  regSelect.value = selectedReg;
+  refresh();
+});
+regSelect.addEventListener('change', () => { selectedReg = regSelect.value; refresh(); });
+
+// Genie guidance for the latest session. The server generates it once per session in the
+// background, so this call returns immediately with status pending/ready/error.
+let lastGuidanceKey = '';
+function mdInline(s) {
+  return esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n+/g, ' ');
+}
+async function loadGuidance(retry = false) {
+  const el = document.getElementById('guidance_text');
+  const meta = document.getElementById('guidance_meta');
+  try {
+    const g = await getJson('api/guidance' + (retry ? '?retry=true' : ''));
+    const key = `${g.session_id}|${g.status}|${g.text}`;
+    if (key === lastGuidanceKey) return;
+    lastGuidanceKey = key;
+    const sess = g.session_id ? `Session ${g.session_id.slice(0, 8)}` : 'No session';
+    if (g.status === 'ready') {
+      el.className = ''; el.innerHTML = mdInline(g.text);
+      meta.textContent = `${sess} - from the Autonomous Driving Agent`;
+    } else if (g.status === 'pending') {
+      el.className = 'muted'; el.textContent = 'Asking the Autonomous Driving Agent for guidance on the latest session...';
+      meta.textContent = sess;
+    } else if (g.status === 'error') {
+      el.className = 'err'; el.textContent = 'Could not get guidance: ' + g.text;
+      meta.innerHTML = `${esc(sess)}<button id="guidance_retry">Retry</button>`;
+      document.getElementById('guidance_retry').onclick = () => { lastGuidanceKey = ''; loadGuidance(true); };
+    } else {
+      el.className = 'muted'; el.textContent = 'No session yet.'; meta.textContent = '';
+    }
+  } catch (e) {
+    el.className = 'err'; el.textContent = 'Could not get guidance: ' + e.message;
+    lastGuidanceKey = '';
+  }
+}
+
+async function refresh() {
+  const status = document.getElementById('status');
+  try {
+    loadGuidance();   // independent of the charts; errors are shown in the guidance box
+    await loadRegistrations();
+    const reg = encodeURIComponent(currentReg());
+    const [data, score, lb] = await Promise.all([
+      getJson(`api/telemetry?reg=${reg}`),
+      getJson(`api/score?reg=${reg}`),
+      getJson('api/leaderboard'),
+    ]);
+    renderScore(score);
+    renderLeaderboard(lb.rows);
+    const labels = data.rows.map(r => fmtTime(r.t));
+    for (const [key, chart] of Object.entries(charts)) {
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = data.rows.map(r => r[key]);
+      chart.update();
+    }
+    status.className = '';
+    const s = data.session;
+    const who = s ? `${s.label}${s.driver_name ? ' - ' + s.driver_name : ''}` : '';
+    status.textContent = data.rows.length
+      ? `Charts: latest session ${s.session_id.slice(0, 8)} (${who}) - ${data.rows.length} points - updated ${new Date().toLocaleTimeString()}`
+      : `No telemetry for the latest session - updated ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    status.className = 'err';
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+command:
+  - uvicorn
+  - app:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8000"
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: TELEMETRY_TABLE
+    value: pmc_sandbox.carsim.car_telemetry
+  - name: SCORE_TABLE
+    value: pmc_sandbox.carsim.driver_safety_score
+  - name: LATEST_SESSION_TABLE
+    value: pmc_sandbox.carsim.driver_latest_session_score
+  - name: GENIE_SPACE_ID
+    value: ""
+  - name: WINDOW_MINUTES
+    value: "5"
